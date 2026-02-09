@@ -1,178 +1,156 @@
-import express from "express";
-import fetch from "node-fetch";
-import cors from "cors";
-import admin from "firebase-admin";
+import express from 'express';
+import cors from 'cors';
+import admin from 'firebase-admin';
+import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
+import axios from 'axios';
 
+dotenv.config();
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-/* ===============================
-   FIREBASE ADMIN INIT
-================================ */
-admin.initializeApp({
-  credential: admin.credential.cert(
-    JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT)
-  )
-});
+// Initialize Firebase Admin
+const serviceAccount = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'serviceAccountKey.json')));
+admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
 const db = admin.firestore();
 
-/* ===============================
-   1️⃣ VERIFY DEPOSIT (PAYSTACK)
-================================ */
-app.post("/verify-deposit", async (req, res) => {
+// ---------- Routes ---------- //
+
+// Health check
+app.get('/', (req, res) => res.send('Zyppayx Backend is Running 🚀'));
+
+// ---------- Users ----------
+app.get('/users', async (req, res) => {
   try {
-    const { reference, uid } = req.body;
-    if (!reference || !uid) return res.status(400).json({ error: "Missing data" });
-
-    const payRes = await fetch(
-      `https://api.paystack.co/transaction/verify/${reference}`,
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}`
-        }
-      }
-    );
-    const result = await payRes.json();
-
-    if (!result.status || result.data.status !== "success") {
-      return res.status(400).json({ error: "Payment not successful" });
-    }
-
-    const amount = result.data.amount / 100;
-
-    await db.runTransaction(async (t) => {
-      const userRef = db.collection("users").doc(uid);
-      const txRef = db.collection("transactions").doc(reference);
-
-      if ((await t.get(txRef)).exists) throw "Already credited";
-
-      t.set(txRef, {
-        uid,
-        type: "deposit",
-        amount,
-        reference,
-        createdAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-
-      t.update(userRef, {
-        balance: admin.firestore.FieldValue.increment(amount)
-      });
-    });
-
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ error: e.toString() });
+    const snapshot = await db.collection('users').get();
+    const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    res.json(users);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-/* ===============================
-   2️⃣ APPROVE TASK → AUTO CREDIT
-================================ */
-app.post("/approve-task", async (req, res) => {
+app.post('/users', async (req, res) => {
   try {
-    const { submissionId } = req.body;
-
-    const subRef = db.collection("task-submissions").doc(submissionId);
-
-    await db.runTransaction(async (t) => {
-      const subSnap = await t.get(subRef);
-      if (!subSnap.exists) throw "Submission not found";
-
-      const sub = subSnap.data();
-      if (sub.paid) throw "Already paid";
-
-      const userRef = db.collection("users").doc(sub.userId);
-
-      t.update(userRef, {
-        balance: admin.firestore.FieldValue.increment(sub.reward)
-      });
-
-      t.update(subRef, {
-        status: "approved",
-        paid: true,
-        approvedAt: admin.firestore.FieldValue.serverTimestamp()
-      });
-    });
-
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ error: e.toString() });
+    const data = req.body;
+    const docRef = await db.collection('users').add(data);
+    res.json({ id: docRef.id, ...data });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-/* ===============================
-   3️⃣ PROCESS WITHDRAWAL
-================================ */
-app.post("/process-withdrawal", async (req, res) => {
+// ---------- Tasks ----------
+app.get('/tasks', async (req, res) => {
+  const snapshot = await db.collection('tasks').get();
+  const tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  res.json(tasks);
+});
+
+app.post('/tasks', async (req, res) => {
+  const { title, description } = req.body;
+  const newTask = { title, description, createdAt: new Date() };
+  const docRef = await db.collection('tasks').add(newTask);
+  res.json({ id: docRef.id, ...newTask });
+});
+
+// ---------- Task Submissions ----------
+app.get('/task-submissions', async (req, res) => {
+  const snapshot = await db.collection('task-submissions').get();
+  const submissions = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+  res.json(submissions);
+});
+
+app.post('/task-submissions', async (req, res) => {
+  const { userId, taskId, submission } = req.body;
+  const data = { userId, taskId, submission, submittedAt: new Date() };
+  const docRef = await db.collection('task-submissions').add(data);
+  res.json({ id: docRef.id, ...data });
+});
+
+// ---------- Withdrawals ----------
+app.get('/withdrawals', async (req, res) => {
+  const snapshot = await db.collection('withdrawals').get();
+  res.json(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+});
+
+app.post('/withdrawals', async (req, res) => {
+  const { userId, amount, status = 'pending' } = req.body;
+  const docRef = await db.collection('withdrawals').add({ userId, amount, status, createdAt: new Date() });
+  res.json({ id: docRef.id, userId, amount, status });
+});
+
+// ---------- Investment Plans ----------
+app.get('/investmentPlans', async (req, res) => {
+  const snapshot = await db.collection('investmentPlans').get();
+  res.json(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+});
+
+app.post('/investmentPlans', async (req, res) => {
+  const { name, durationDays, minAmount, maxAmount, interest } = req.body;
+  const docRef = await db.collection('investmentPlans').add({ name, durationDays, minAmount, maxAmount, interest });
+  res.json({ id: docRef.id, name, durationDays, minAmount, maxAmount, interest });
+});
+
+// ---------- Promotions ----------
+app.get('/promotions', async (req, res) => {
+  const snapshot = await db.collection('promotions').get();
+  res.json(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+});
+
+app.post('/promotions', async (req, res) => {
+  const { title, description } = req.body;
+  const docRef = await db.collection('promotions').add({ title, description, createdAt: new Date() });
+  res.json({ id: docRef.id, title, description });
+});
+
+// ---------- Banner Ads ----------
+app.get('/banner_ads', async (req, res) => {
+  const snapshot = await db.collection('banner_ads').get();
+  res.json(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+});
+
+app.post('/banner_ads', async (req, res) => {
+  const { imageUrl, link } = req.body;
+  const docRef = await db.collection('banner_ads').add({ imageUrl, link, createdAt: new Date() });
+  res.json({ id: docRef.id, imageUrl, link });
+});
+
+// ---------- User Investments ----------
+app.get('/userinvestments', async (req, res) => {
+  const snapshot = await db.collection('userinvestments').get();
+  res.json(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })));
+});
+
+app.post('/userinvestments', async (req, res) => {
+  const { userId, planId, amount, status = 'active' } = req.body;
+  const docRef = await db.collection('userinvestments').add({ userId, planId, amount, status, createdAt: new Date() });
+  res.json({ id: docRef.id, userId, planId, amount, status });
+});
+
+// ---------- Deposit via Paystack ----------
+app.post('/deposit', async (req, res) => {
+  const { email, amount } = req.body;
+  const fee = amount * 0.02;
+  const total = amount + fee;
+
   try {
-    const { withdrawalId } = req.body;
-    const wdRef = db.collection("withdrawals").doc(withdrawalId);
-
-    const wdSnap = await wdRef.get();
-    if (!wdSnap.exists) return res.status(404).json({ error: "Not found" });
-
-    const wd = wdSnap.data();
-    if (wd.status !== "pending") throw "Already processed";
-
-    const userRef = db.collection("users").doc(wd.uid);
-
-    await db.runTransaction(async (t) => {
-      const userSnap = await t.get(userRef);
-      if (userSnap.data().balance < wd.amount) throw "Insufficient balance";
-
-      t.update(userRef, {
-        balance: admin.firestore.FieldValue.increment(-wd.amount)
-      });
-
-      t.update(wdRef, {
-        status: "processing"
-      });
+    // Initialize Paystack transaction
+    const response = await axios.post('https://api.paystack.co/transaction/initialize', {
+      email,
+      amount: total * 100
+    }, {
+      headers: { Authorization: `Bearer ${process.env.PAYSTACK_SECRET_KEY}` }
     });
 
-    // (Optional) Paystack transfer logic goes here
-
-    await wdRef.update({
-      status: "completed",
-      completedAt: admin.firestore.FieldValue.serverTimestamp()
-    });
-
-    res.json({ success: true });
-  } catch (e) {
-    res.status(500).json({ error: e.toString() });
+    res.json(response.data);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
-/* ===============================
-   4️⃣ INVESTMENT PROFIT RUN
-================================ */
-app.post("/run-investments", async (_, res) => {
-  const snaps = await db.collection("userinvestments")
-    .where("status", "==", "active")
-    .get();
-
-  const batch = db.batch();
-
-  snaps.forEach(doc => {
-    const inv = doc.data();
-    const profit = inv.amount * inv.dailyRate;
-
-    batch.update(db.collection("users").doc(inv.uid), {
-      balance: admin.firestore.FieldValue.increment(profit)
-    });
-
-    batch.update(doc.ref, {
-      lastRun: admin.firestore.FieldValue.serverTimestamp()
-    });
-  });
-
-  await batch.commit();
-  res.json({ success: true });
-});
-
-/* ===============================
-   SERVER START
-================================ */
-app.listen(3000, () => {
-  console.log("Zyppayx backend running");
-});
+// ---------- Start Server ----------
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Zyppayx backend running on port ${PORT} 🚀`));
