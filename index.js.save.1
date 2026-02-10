@@ -1,0 +1,17 @@
+rm index.js
+import express from 'express';
+import cors from 'cors';
+import admin from 'firebase-admin';
+import dotenv from 'dotenv';
+import fs from 'fs';
+import path from 'path';
+import axios from 'axios';
+
+dotenv.config();
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// ---------- Initialize Firebase Admin ----------
+const serviceAccountPath = process.env.FIREBASE_KEY_PATH; // from .env
+const serviceAccount = JSON.parse(fs.readFileSync(path.resolve(serviceAccountPath), '
