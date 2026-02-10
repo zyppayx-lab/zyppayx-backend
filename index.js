@@ -77,33 +77,66 @@ app.get("/userinvestments", async (req, res) => {
   }
 });
 
-// Get all tasks
+// Get all tasks with creator info, newest first
 app.get("/tasks", async (req, res) => {
   try {
-    const snapshot = await db.collection("tasks").get();
-    const tasks = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    const snapshot = await db.collection("tasks").orderBy("createdAt", "desc").get();
+
+    const tasks = await Promise.all(
+      snapshot.docs.map(async (doc) => {
+        const task = { id: doc.id, ...doc.data() };
+        if (task.createdBy) {
+          const userSnap = await db.collection("users").doc(task.createdBy).get();
+          task.user = userSnap.exists ? userSnap.data() : null;
+        }
+        return task;
+      })
+    );
+
     res.json(tasks);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Get all task submissions
+// Get all task submissions with user info, newest first
 app.get("/task-submissions", async (req, res) => {
   try {
-    const snapshot = await db.collection("task-submissions").get();
-    const submissions = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    const snapshot = await db.collection("task-submissions").orderBy("createdAt", "desc").get();
+
+    const submissions = await Promise.all(
+      snapshot.docs.map(async (doc) => {
+        const submission = { id: doc.id, ...doc.data() };
+        if (submission.userId) {
+          const userSnap = await db.collection("users").doc(submission.userId).get();
+          submission.user = userSnap.exists ? userSnap.data() : null;
+        }
+        return submission;
+      })
+    );
+
     res.json(submissions);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Get all investment plans
+// Get all investment plans with creator info
 app.get("/investment-plans", async (req, res) => {
   try {
-    const snapshot = await db.collection("investmentPlans").get();
-    const plans = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    const snapshot = await db.collection("investmentPlans").orderBy("createdAt", "desc").get();
+
+    const plans = await Promise.all(
+      snapshot.docs.map(async (doc) => {
+        const plan = { id: doc.id, ...doc.data() };
+        if (plan.createdBy) {
+          const userSnap = await db.collection("users").doc(plan.createdBy).get();
+          plan.user = userSnap.exists ? userSnap.data() : null;
+        }
+        return plan;
+      })
+    );
+
     res.json(plans);
   } catch (err) {
     res.status(500).json({ error: err.message });
