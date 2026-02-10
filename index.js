@@ -17,19 +17,34 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(bodyParser.json());
 
-// Firebase setup
-const serviceAccountPath =
-  process.env.FIREBASE_KEY_PATH || "/etc/secrets/serviceAccountKey.json";
+// ==== Firebase Setup ====
+const serviceAccountPath = process.env.FIREBASE_KEY_PATH;
 
-const serviceAccount = JSON.parse(
-  fs.readFileSync(path.resolve(serviceAccountPath), "utf8")
-);
+if (!serviceAccountPath) {
+  console.error("FIREBASE_KEY_PATH environment variable is not set.");
+  process.exit(1);
+}
+
+let serviceAccount;
+try {
+  serviceAccount = JSON.parse(fs.readFileSync(path.resolve(serviceAccountPath), "utf8"));
+} catch (err) {
+  console.error("Failed to read Firebase service account file:", err);
+  process.exit(1);
+}
 
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
 });
 
 const db = admin.firestore();
+
+// ==== Paystack Setup ====
+const PAYSTACK_SECRET = process.env.PAYSTACK_SECRET;
+
+if (!PAYSTACK_SECRET) {
+  console.warn("PAYSTACK_SECRET environment variable is not set. Payments won't work.");
+}
 
 // ===== Routes =====
 
@@ -77,66 +92,33 @@ app.get("/userinvestments", async (req, res) => {
   }
 });
 
-// Get all tasks with creator info, newest first
+// Get all tasks
 app.get("/tasks", async (req, res) => {
   try {
-    const snapshot = await db.collection("tasks").orderBy("createdAt", "desc").get();
-
-    const tasks = await Promise.all(
-      snapshot.docs.map(async (doc) => {
-        const task = { id: doc.id, ...doc.data() };
-        if (task.createdBy) {
-          const userSnap = await db.collection("users").doc(task.createdBy).get();
-          task.user = userSnap.exists ? userSnap.data() : null;
-        }
-        return task;
-      })
-    );
-
+    const snapshot = await db.collection("tasks").get();
+    const tasks = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     res.json(tasks);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Get all task submissions with user info, newest first
+// Get all task submissions
 app.get("/task-submissions", async (req, res) => {
   try {
-    const snapshot = await db.collection("task-submissions").orderBy("createdAt", "desc").get();
-
-    const submissions = await Promise.all(
-      snapshot.docs.map(async (doc) => {
-        const submission = { id: doc.id, ...doc.data() };
-        if (submission.userId) {
-          const userSnap = await db.collection("users").doc(submission.userId).get();
-          submission.user = userSnap.exists ? userSnap.data() : null;
-        }
-        return submission;
-      })
-    );
-
+    const snapshot = await db.collection("task-submissions").get();
+    const submissions = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     res.json(submissions);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Get all investment plans with creator info
+// Get all investment plans
 app.get("/investment-plans", async (req, res) => {
   try {
-    const snapshot = await db.collection("investmentPlans").orderBy("createdAt", "desc").get();
-
-    const plans = await Promise.all(
-      snapshot.docs.map(async (doc) => {
-        const plan = { id: doc.id, ...doc.data() };
-        if (plan.createdBy) {
-          const userSnap = await db.collection("users").doc(plan.createdBy).get();
-          plan.user = userSnap.exists ? userSnap.data() : null;
-        }
-        return plan;
-      })
-    );
-
+    const snapshot = await db.collection("investmentPlans").get();
+    const plans = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     res.json(plans);
   } catch (err) {
     res.status(500).json({ error: err.message });
