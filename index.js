@@ -1,110 +1,121 @@
+// index.js
+import express from "express";
+import cors from "cors";
+import bodyParser from "body-parser";
+import fs from "fs";
+import path from "path";
+import admin from "firebase-admin";
+import dotenv from "dotenv";
 
-// index.js - Zyppayx Backend
-import express from 'express';
-import cors from 'cors';
-import admin from 'firebase-admin';
-import dotenv from 'dotenv';
-import fs from 'fs';
-import path from 'path';
-import axios from 'axios';
-
+// Load environment variables
 dotenv.config();
-const app = express();
-app.use(cors());
-app.use(express.json());
 
-// ---------- Initialize Firebase Admin ----------
-const serviceAccountPath = process.env.FIREBASE_KEY_PATH; // from .env
-if (!serviceAccountPath) {
-  console.error("❌ FIREBASE_KEY_PATH is not defined in .env");
-  process.exit(1);
-}
+const app = express();
+const PORT = process.env.PORT || 5000;
+
+// Middleware
+app.use(cors());
+app.use(bodyParser.json());
+
+// Firebase setup
+const serviceAccountPath =
+  process.env.FIREBASE_KEY_PATH || "/etc/secrets/serviceAccountKey.json";
 
 const serviceAccount = JSON.parse(
-  fs.readFileSync(path.resolve(serviceAccountPath))
+  fs.readFileSync(path.resolve(serviceAccountPath), "utf8")
 );
 
 admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+  credential: admin.credential.cert(serviceAccount),
 });
 
 const db = admin.firestore();
 
-// ---------- Routes ---------- //
+// ===== Routes =====
 
-// Health check
-app.get('/', (req, res) => {
-  res.send('Zyppayx Backend is Running 🚀');
-});
-
-// ---------- Users ----------
-app.get('/users', async (req, res) => {
+// Get all users
+app.get("/users", async (req, res) => {
   try {
-    const snapshot = await db.collection('users').get();
-    const users = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const snapshot = await db.collection("users").get();
+    const users = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     res.json(users);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ---------- Deposits ----------
-app.get('/deposits', async (req, res) => {
+// Get all deposits
+app.get("/deposits", async (req, res) => {
   try {
-    const snapshot = await db.collection('deposits').get();
-    const deposits = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const snapshot = await db.collection("deposits").get();
+    const deposits = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     res.json(deposits);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ---------- Withdrawals ----------
-app.get('/withdrawals', async (req, res) => {
+// Get all withdrawals
+app.get("/withdrawals", async (req, res) => {
   try {
-    const snapshot = await db.collection('withdrawals').get();
-    const withdrawals = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const snapshot = await db.collection("withdrawals").get();
+    const withdrawals = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     res.json(withdrawals);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ---------- Investments ----------
-app.get('/userinvestments', async (req, res) => {
+// Get all user investments
+app.get("/userinvestments", async (req, res) => {
   try {
-    const snapshot = await db.collection('userinvestments').get();
-    const investments = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    res.json(investments);
+    const snapshot = await db.collection("userinvestments").get();
+    const userInvestments = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    res.json(userInvestments);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ---------- Task Submissions ----------
-app.get('/task-submissions', async (req, res) => {
+// Get all tasks
+app.get("/tasks", async (req, res) => {
   try {
-    const snapshot = await db.collection('task-submissions').get();
-    const tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    const snapshot = await db.collection("tasks").get();
+    const tasks = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
     res.json(tasks);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ---------- Task List ----------
-app.get('/tasks', async (req, res) => {
+// Get all task submissions
+app.get("/task-submissions", async (req, res) => {
   try {
-    const snapshot = await db.collection('tasks').get();
-    const tasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    res.json(tasks);
+    const snapshot = await db.collection("task-submissions").get();
+    const submissions = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    res.json(submissions);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// ---------- Start Server ----------
-const PORT = process.env.PORT || 5000;
+// Get all investment plans
+app.get("/investment-plans", async (req, res) => {
+  try {
+    const snapshot = await db.collection("investmentPlans").get();
+    const plans = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+    res.json(plans);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Default route
+app.get("/", (req, res) => {
+  res.send("Zyppayx Backend Running 🚀");
+});
+
+// Start server
 app.listen(PORT, () => {
   console.log(`Zyppayx backend running on port ${PORT} 🚀`);
 });
